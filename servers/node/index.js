@@ -6,7 +6,12 @@ const crypto = require("crypto");
 const port = process.env.NODE_PORT || 8080;
 const app = express();
 
-const { SERVER_SSL_KEY, SERVER_SSL_CERT, OTHER_SERVER_HOST, OTHER_SERVER_PORT } = process.env;
+const {
+  SERVER_SSL_KEY,
+  SERVER_SSL_CERT,
+  OTHER_SERVER_HOST,
+  OTHER_SERVER_PORT
+} = process.env;
 
 app.disable("x-powered-by");
 
@@ -24,7 +29,7 @@ const actual = app => {
 
 app.get("/", function(req, res) {
   res.writeHead(200);
-  console.log("request came in from ${")
+  console.log(`request came in from ${req.ip}`);
   res.end("hello\n");
 });
 
