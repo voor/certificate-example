@@ -36,30 +36,24 @@ First we'll need to generate the CA, bundle it with everything from the [Mozilla
 
 ```
 openssl genrsa -out ca.key 4096
-openssl req -new -x509 -days 1 -key ca.key -subj "/C=US/ST=MD/L=EC/O=Acme, Inc./CN=Acme Root CA" -out ca.crt
+openssl req -new -x509 -days 2 -key ca.key -subj "/C=US/ST=MD/L=EC/O=Acme, Inc./CN=Acme Root CA" -out ca.crt
 ```
 
 ### Sign a Server with the CA
 
-Next we need to create a new server key and signing request.
-
-```
-openssl req -newkey rsa:2048 -nodes -keyout server.key -subj "/C=US/ST=MD/L=EC/O=Acme, Inc./CN=*.example.com" -out server.csr
-```
-
-If you want to see the contents, you can output to confirm like this:
-
-```
-openssl req -in server.csr -noout -text
-```
-
-Next, we need to sign the actual request, we'll also pass in some alternative names:
-
-```
-openssl x509 -req -extfile <(printf "subjectAltName=DNS:example.com,DNS:www.example.com") -days 1 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
-```
-
-If this isn't the first time you're signing a request, you'll need to change `-CAcreateserial` to `-CAserial ca.srl` instead. (Or don't, but you'll overwrite the existing one)
+1. Create a new server key and signing request.
+    ```
+    openssl req -newkey rsa:2048 -nodes -keyout server.key -subj "/C=US/ST=MD/L=EC/O=Acme, Inc./CN=*.cluster.local" -out server.csr
+    ```
+    If you want to see the contents, you can output to confirm like this:
+    ```
+    openssl req -in server.csr -noout -text
+    ```
+1. Sign the actual request, we'll also pass in some alternative names:
+    ```
+    openssl x509 -req -extfile <(printf "subjectAltName=DNS:node,DNS:java,DNS:www.example.com,DNS:*.cluster.local") -days 1 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
+    ```
+    _If this isn't the first time you're signing a request, you'll need to change `-CAcreateserial` to `-CAserial ca.srl` instead. (Or don't, but you'll overwrite the existing one)_
 
 ## Application Prep
 
@@ -75,10 +69,10 @@ server.key
 
 ### Create a Java Keystore (Java Only)
 
-Java Servers like things in their own little `keystore.jks` files, so let's go ahead and add our certificates into the keystore.
+Java Servers like things in their own little PKCS12 files, so let's go ahead and change our certificate into that format.
 
 ```
-keytool -noprompt -import -alias spring -file server.crt -keystore keystore.p12 -storepass password
+openssl pkcs12 -export -in server.crt -inkey server.key -name spring -out keystore.p12 -nodes -password pass:changeit
 ```
 
 ### Create your CA Bundle
@@ -88,11 +82,28 @@ You have your CA, but what about public trusted CAs? You can either say _to heck
 ```
 mkdir -p ca-certificates && mkdir -p certs
 cp ca.crt ca-certificates/ca.crt
-docker build -t update-ca-certificates -f update-ca-certificates.Dockerfile .
-docker run -it --rm --name certs -v $PWD/ca-certificates/:/usr/local/share/ca-certificates:Z -v $PWD/certs/:/etc/ssl/certs:Z update-ca-certificates
+docker run -it --rm --name certs --entrypoint update-ca-certificates -v $PWD/ca-certificates/:/usr/local/share/ca-certificates:Z -v $PWD/certs/:/etc/ssl/certs:Z node 
 ```
 
 You should now have a `certs/ca-certificates.crt` file that is really long and contains your CA along with the other publicly trusted ones.
+
+### Create your Trust Store
+
+Java doesn't use a CA bundle, they instead use a truststore, which means we need to do something a little different for Java.
+
+```
+mkdir -p certs/java
+# Grab the standard truststore for openjdk
+docker run -it --rm -u $UID --name java-truststore --entrypoint cp \
+    -v $PWD/certs/:/output:Z openjdk \
+    /etc/ssl/certs/java/cacerts /output/java/cacerts
+# Add our CA to the keystore.
+keytool -noprompt -import -alias myca -file ca.crt -keystore certs/java/cacerts -storepass changeit -trustcacerts
+# Check that it's there with all the others.
+keytool -list -keystore certs/java/cacerts -noprompt -storepass changeit
+```
+
+You should now have a `certs/java/cacerts` file that is a binary and contains your CA along with the other publicly trusted ones.
 
 ### Create your Servers
 
@@ -108,24 +119,25 @@ Very basic ExpressJS server is located in `servers/node` folder, including a `Do
 
 ### Deploy Certificate and Keystore
 
-Add our CA certificate:
+1. Add our CA certificate bundle
+    ```
+    kubectl create secret generic castore --from-file=ca-certificates.crt=./certs/ca-certificates.crt
+    ```
 
-```
-kubectl create secret generic castore --from-file=ca-certificates.crt=./certs/ca-certificates.crt
-```
+1. Create the **keystore** for the Java service
+    ```
+    # This assumes you're in the directory where we created the keystore.p12 from above using the same alias and password!
+    kubectl create secret generic java-keystore --from-literal=alias="spring" --from-literal=password="changeit" --from-file=keystore.p12=keystore.p12
+    ```
 
-Next we need to create the keystore for the Java service:
-
-```
-# This assumes you're in the directory where we created the keystore.p12 from above using the same alias and password!
-kubectl create secret generic java-keystore --from-literal=alias="spring" --from-literal=password="password" --from-file=keystore.p12=keystore.p12
-```
-
-Finally, we'll deploy the server certificate that we generated and signed with our CA earlier on for our ExpressJS server.
-
-```
-kubectl create secret tls server-cert --cert server.crt --key server.key
-```
+1. Create the server certificate secret that we generated and signed with our CA earlier on for our ExpressJS server.
+    ```
+    kubectl create secret tls server-cert --cert server.crt --key server.key
+    ```
+1. Create the **truststore** for Java
+    ```
+    kubectl create secret generic java-truststore --from-file=cacert=./certs/java/cacerts
+    ```
 
 ### Deploy our Servers
 

@@ -1,7 +1,7 @@
 certs/
 ca-certificates/
 /*.crt
+/*.key
+/*.p12
 /server.csr
 /ca.srl
-/keystore.p12
-/*.key

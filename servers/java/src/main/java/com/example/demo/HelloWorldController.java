@@ -1,71 +1,84 @@
 package com.example.demo;
 
-import java.util.concurrent.atomic.AtomicLong;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-import sun.net.www.http.HttpClient;
+import sun.security.validator.ValidatorException;
 
 import javax.net.ssl.*;
+import javax.xml.bind.ValidationException;
+import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 
 @RestController
 public class HelloWorldController {
 
-    @Value("${OTHER_SERVER_HOST}")
+    Logger logger = LoggerFactory.getLogger(HelloWorldController.class);
+
+    @Value("${OTHER_SERVER_HOST:}")
     String serverHost;
 
-    @Value("${OTHER_SERVER_PORT}")
+    @Value("${OTHER_SERVER_PORT:}")
     Integer serverPort;
 
-    @Value("${http.client.ssl.trust-store}")
-    private Resource keyStore;
-
-    @Value("${http.client.ssl.trust-store-password}")
-    private String keyStorePassword;
-
-    @Bean
-    RestTemplate restTemplate() throws Exception {
-        SSLContext sslContext = new SSLContextBuilder()
-                .loadTrustMaterial(
-                        keyStore.getURL(),
-                        keyStorePassword.toCharArray()
-                ).build();
-        SSLConnectionSocketFactory socketFactory =
-                new SSLConnectionSocketFactory(sslContext);
-        HttpClient httpClient = HttpClients.custom()
-                .setSSLSocketFactory(socketFactory).build();
-        HttpComponentsClientHttpRequestFactory factory =
-                new HttpComponentsClientHttpRequestFactory(httpClient);
-        return new RestTemplate(factory);
+    @Autowired
+    public HelloWorldController(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
+
+    private final RestTemplate restTemplate;
 
     @RequestMapping("/")
     public String hello() {
         return "hello";
     }
 
-    @Scheduled(initialDelay = 10000, fixedDelay = 10000)
+    @Scheduled(initialDelay = 10000, fixedDelay = 30000)
     public void sendServiceRequest() throws Exception {
-        SSLContext sc = SSLContext.getInstance("SSL");
-        sc.init(null, new TrustManager[] { trm }, null);
-        SSLSocketFactory factory =sc.getSocketFactory();
-        SSLSocket socket =(SSLSocket)factory.createSocket(serverHost, serverPort);
-        socket.startHandshake();
-        SSLSession session = socket.getSession();
-        java.security.cert.Certificate[] servercerts = session.getPeerCertificates();
-        for (int i = 0; i < servercerts.length; i++) {
-            System.out.print("-----BEGIN CERTIFICATE-----\n");
-            System.out.print(new sun.misc.BASE64Encoder().encode(servercerts[i].getEncoded()));
-            System.out.print("\n-----END CERTIFICATE-----\n");
+        String resourceUrl = "https://" + serverHost + ":" + serverPort;
+        try {
+            ResponseEntity<String> response = restTemplate.getForEntity(resourceUrl, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                logger.info("Successfully connected and validated with truststore.");
+            } else if (StringUtils.hasText(serverHost)) {
+                handleCertProblem();
+            }
+        } catch (RestClientException e) {
+            handleCertProblem();
         }
+    }
 
-        socket.close();
+    private void handleCertProblem() throws Exception {
+        try {
+            SSLContext sc = SSLContext.getDefault();
+            SSLSocketFactory factory = sc.getSocketFactory();
+            SSLSocket socket = (SSLSocket) factory.createSocket(serverHost, serverPort);
+            socket.startHandshake();
+            SSLSession session = socket.getSession();
+            Arrays.stream(session.getPeerCertificates()).forEach(certificate -> {
+                try {
+                    logger.info("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----", new sun.misc.BASE64Encoder().encode(certificate.getEncoded()));
+                } catch (Exception e) {
+                    logger.error("", e);
+                }
+            });
 
+            socket.close();
+        } catch (SSLHandshakeException e) {
+            logger.error("", e);
+        } catch (IOException e) {
+            logger.error("", e);
+        }
     }
 }
