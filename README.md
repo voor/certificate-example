@@ -51,7 +51,7 @@ openssl req -new -x509 -days 2 -key ca.key -subj "/C=US/ST=MD/L=EC/O=Acme, Inc./
     ```
 1. Sign the actual request, we'll also pass in some alternative names:
     ```
-    openssl x509 -req -extfile <(printf "subjectAltName=DNS:node,DNS:java,DNS:www.example.com,DNS:*.cluster.local") -days 1 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
+    openssl x509 -req -extfile <(printf "subjectAltName=DNS:nodejs,DNS:java,DNS:nodejs.default.svc.cluster.local,DNS:java.default.svc.cluster.local,DNS:www.example.com,DNS:*.cluster.local") -days 1 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
     ```
     _If this isn't the first time you're signing a request, you'll need to change `-CAcreateserial` to `-CAserial ca.srl` instead. (Or don't, but you'll overwrite the existing one)_
 
@@ -142,3 +142,15 @@ Very basic ExpressJS server is located in `servers/node` folder, including a `Do
 ### Deploy our Servers
 
 We have two different deployments, one for the Java service and one for the Node service. Each service will make a simple call the other service to test our certificates to make sure they are trusted.
+
+Deploy the Java service:
+
+```
+kubectl apply -f java-deploy.yml
+```
+
+And deploy the NodeJS service:
+
+```
+kubectl apply -f node-deploy.yml
+```

@@ -4,8 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.util.StringUtils;
@@ -13,12 +11,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-import sun.security.validator.ValidatorException;
 
 import javax.net.ssl.*;
-import javax.xml.bind.ValidationException;
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 @RestController
@@ -46,16 +41,18 @@ public class HelloWorldController {
 
     @Scheduled(initialDelay = 10000, fixedDelay = 30000)
     public void sendServiceRequest() throws Exception {
-        String resourceUrl = "https://" + serverHost + ":" + serverPort;
-        try {
-            ResponseEntity<String> response = restTemplate.getForEntity(resourceUrl, String.class);
-            if (response.getStatusCode().is2xxSuccessful()) {
-                logger.info("Successfully connected and validated with truststore.");
-            } else if (StringUtils.hasText(serverHost)) {
+        if (StringUtils.hasText(serverHost)) {
+            String resourceUrl = "https://" + serverHost + ":" + serverPort;
+            try {
+                ResponseEntity<String> response = restTemplate.getForEntity(resourceUrl, String.class);
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    logger.info("Successfully connected and validated with truststore.");
+                } else {
+                    handleCertProblem();
+                }
+            } catch (RestClientException e) {
                 handleCertProblem();
             }
-        } catch (RestClientException e) {
-            handleCertProblem();
         }
     }
 

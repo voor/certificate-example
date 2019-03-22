@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs
+  labels:
+    app: nodejs
+    group: certificate-example
+spec:
+  type: ClusterIP
+  ports:
+    - port: 443
+      targetPort: 8443
+      name: https
+  selector:
+    app: nodejs
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs
+  labels:
+    app: nodejs
+    group: certificate-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodejs
+  template:
+    metadata:
+      labels:
+        app: nodejs
+    spec:
+      containers:
+        - name: nodejs
+          image: voor/node-service:latest
+          env:
+            - name: SERVER_SSL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: server-cert
+                  key: tls.key
+            - name: SERVER_SSL_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: server-cert
+                  key: tls.crt
+            - name: NODE_PORT
+              value: "8443"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: OTHER_SERVER_HOST
+              value: "java.default.svc.cluster.local"
+            - name: OTHER_SERVER_PORT
+              value: "443"
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          volumeMounts:
+            - name: castore
+              mountPath: "/etc/ssl/certs"
+              readOnly: true
+      volumes:
+        - name: castore
+          secret:
+            secretName: castore
