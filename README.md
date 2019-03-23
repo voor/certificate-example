@@ -136,7 +136,7 @@ Very basic ExpressJS server is located in `servers/node` folder, including a `Do
     ```
 1. Create the **truststore** for Java
     ```
-    kubectl create secret generic java-truststore --from-file=cacert=./certs/java/cacerts
+    kubectl create secret generic java-truststore --from-file=cacerts=./certs/java/cacerts
     ```
 
 ### Deploy our Servers
@@ -153,4 +153,19 @@ And deploy the NodeJS service:
 
 ```
 kubectl apply -f node-deploy.yml
+```
+
+After the deployments have a running pod, you can check the logs (`kubectl logs deploy/nodejs -f`) to see the calls between each service successfully validated against their CA bundle (NodeJS) or truststore (Java):
+
+NodeJS:
+```
+server started on port 8443
+client connected, it is:  authorized
+Subject: {"C":"US","ST":"MD","L":"EC","O":"Acme, Inc.","CN":"*.cluster.local"}
+Issuer: {"C":"US","ST":"MD","L":"EC","O":"Acme, Inc.","CN":"Acme Root CA"}
+```
+
+Java:
+```
+2019-03-23 17:40:22.260  INFO 1 --- [   scheduling-1] com.example.demo.HelloWorldController    : Successfully connected and validated with truststore.
 ```
