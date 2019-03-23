@@ -68,7 +68,7 @@ if (OTHER_SERVER_HOST) {
   const fullRequest = options => {
     const socket = tls.connect(options, () => {
       console.log(
-        `client connected to ${socket.servername}`,
+        "client connected, it is: ",
         socket.authorized ? "authorized" : "unauthorized"
       );
       certProcess(socket.getPeerCertificate());
