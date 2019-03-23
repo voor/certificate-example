@@ -169,3 +169,73 @@ Java:
 ```
 2019-03-23 17:40:22.260  INFO 1 --- [   scheduling-1] com.example.demo.HelloWorldController    : Successfully connected and validated with truststore.
 ```
+
+## Deep Dive
+
+So how did this work, and what are the aspects of the truststore in Java and the ca bundle for Node?
+
+### Java
+
+This block is all that is necessary for Java applications:
+
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java
+  labels:
+    app: java
+    group: certificate-example
+spec:
+  ...
+  template:
+    ...
+    spec:
+      containers:
+        - name: java
+          ...
+          volumeMounts:
+            - name: java-truststore
+              mountPath: "/etc/ssl/certs/java"
+              readOnly: true
+      volumes:
+        - name: java-truststore
+          secret:
+            secretName: java-truststore
+
+```
+
+We are overriding the default truststore that is located at `/etc/ssl/certs/java/cacerts` with our own folder of secrets that contains an entry for `cacerts`.  No code changes or container changes necessary.
+
+### NodeJS
+
+Node is a little different, since Node actually bakes in the default certificates from Mozilla into its internal truststore.  We also need the `NODE_EXTRA_CA_CERTS` variable that will add additional certificates:
+
+```
+apiVersion: apps/v1
+kind: Deployment
+...
+spec:
+  ...
+  template:
+    ...
+    spec:
+      containers:
+        - name: nodejs
+          ...
+          env:
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/etc/ssl/certs/ca-certificates.crt"
+          volumeMounts:
+            - name: castore
+              mountPath: "/etc/ssl/certs"
+              readOnly: true
+      volumes:
+        - name: castore
+          secret:
+            secretName: castore
+```
+
+## Conclusion
+
+You can add in a new trusted certificate without modifying the containers, which allows easier rotation or changing CAs for different environments.
